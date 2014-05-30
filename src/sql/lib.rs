@@ -4,6 +4,8 @@
 #![license = "MIT"]
 #![crate_type = "dylib"]
 
+#![feature(macro_rules)]
+
 pub trait Table {
     fn table_name(_: Option<Self>) -> &str;
     fn create_table_query(_: Option<Self>) -> String;
@@ -42,3 +44,31 @@ impl SqlPrimitive for f64 {
         "real"
     }
 }
+
+pub trait SqlType {
+    fn typename(_: Option<Self>) -> String;
+}
+
+pub fn sql_typename<T: SqlType>() -> String {
+    SqlType::typename(None::<T>)
+}
+
+impl<T:SqlPrimitive> SqlType for Option<T> {
+    fn typename(_: Option<Option<T>>) -> String {
+        prim_typename::<T>().to_strbuf()
+    }
+}
+
+macro_rules! impl_sqltype(
+    ($prim_ty:ty) => (
+        impl SqlType for $prim_ty {
+            fn typename(_: Option<$prim_ty>) -> String {
+                format!("{} not null", prim_typename::<$prim_ty>())
+            }
+        }
+    )
+)
+
+impl_sqltype!(int)
+impl_sqltype!(String)
+impl_sqltype!(f64)

@@ -23,7 +23,7 @@ pub fn macro_registrar(register: |ast::Name, SyntaxExtension|) {
 }
 
 fn coldef_typename(cx: &mut ExtCtxt, ty: ast::P<ast::Ty>) -> @ast::Expr {
-    quote_expr!(cx, sql::prim_typename::<$ty>())
+    quote_expr!(cx, sql::sql_typename::<$ty>())
 }
 
 fn create_query_expr(cx: &mut ExtCtxt,
@@ -80,8 +80,8 @@ fn expand_table(cx: &mut ExtCtxt,
             }
 
             fn create_table_query(_: Option<$table_name>) -> String {
-                let coldefs:Vec<String> = $schema.iter().map(|&(colname, typename)| {
-                    format!("{} {}", colname, typename)
+                let coldefs:Vec<String> = $schema.iter().map(|&(colname, ref typename)| {
+                    format!("{} {}", colname, typename.as_slice())
                 }).collect();
 
                 let table_name = sql::table_name::<$table_name>();
