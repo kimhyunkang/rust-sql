@@ -1,0 +1,3 @@
+[submodule "rustsqlite"]
+	path = rustsqlite
+	url = git@github.com:linuxfood/rustsqlite.git
