@@ -22,5 +22,5 @@ fn create_table_query_test() {
 #[test]
 fn create_table() {
     let db = sqlite3::open("test.sqlite3").unwrap();
-    // db.create_table_if_not_exists::<TestTable>();
+    db.create_table_if_not_exists::<TestTable>();
 }
