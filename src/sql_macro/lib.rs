@@ -85,7 +85,7 @@ fn expand_table(cx: &mut ExtCtxt,
                 }).collect();
 
                 let table_name = sql::table_name::<$table_name>();
-                format!("CREATE TABLE {} ({});", table_name, coldefs.connect(", "))
+                format!("CREATE TABLE IF NOT EXISTS {} ({});", table_name, coldefs.connect(", "))
             }
         }
     );

@@ -6,6 +6,10 @@
 
 #![feature(macro_rules)]
 
+extern crate sqlite3;
+
+pub mod adapter;
+
 pub trait Table {
     fn table_name(_: Option<Self>) -> &str;
     fn create_table_query(_: Option<Self>) -> String;
