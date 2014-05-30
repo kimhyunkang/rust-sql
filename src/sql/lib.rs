@@ -55,7 +55,7 @@ pub fn sql_typename<T: SqlType>() -> String {
 
 impl<T:SqlPrimitive> SqlType for Option<T> {
     fn typename(_: Option<Option<T>>) -> String {
-        prim_typename::<T>().to_strbuf()
+        prim_typename::<T>().to_str()
     }
 }
 

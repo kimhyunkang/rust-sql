@@ -12,5 +12,5 @@ pub struct TestTable {
 
 #[test]
 fn create_table_query_test() {
-    assert_eq!(sql::create_table_query::<TestTable>(), "CREATE TABLE TestTable (a int, b text not null);".to_strbuf())
+    assert_eq!(sql::create_table_query::<TestTable>(), "CREATE TABLE TestTable (a int, b text not null);".to_str())
 }
