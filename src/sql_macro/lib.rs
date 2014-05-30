@@ -22,6 +22,10 @@ pub fn macro_registrar(register: |ast::Name, SyntaxExtension|) {
     register(token::intern("sql_table"), ItemDecorator(expand_table))
 }
 
+fn coldef_typename(cx: &mut ExtCtxt, ty: ast::P<ast::Ty>) -> @ast::Expr {
+    quote_expr!(cx, sql::prim_typename::<$ty>())
+}
+
 fn create_query_expr(cx: &mut ExtCtxt,
                     span: codemap::Span,
                     item: @ast::Item) -> (ast::Ident, @ast::Expr) {
@@ -44,17 +48,21 @@ fn create_query_expr(cx: &mut ExtCtxt,
         match field.node.kind {
             ast::UnnamedField(_) =>
                 cx.span_bug(field.span, "#[sql_table] does not support unnamed struct"),
-            ast::NamedField(ref ident, _) =>
-                coldefs.push(format!("{} \\{\\}", ident.to_source()))
+            ast::NamedField(ref ident, _) => {
+                let ty = field.node.ty;
+                let tuple = ast::ExprTup(vec![
+                    cx.expr_str(span, token::intern_and_get_ident(ident.to_source().as_slice())),
+                    coldef_typename(cx, ty) 
+                ]);
+
+                coldefs.push(cx.expr(span, tuple))
+            }
         }
     }
 
-    let query_fmt = format!("CREATE TABLE {} ({});", item.ident.to_source(), coldefs.connect(", "));
+    let vec_expr = cx.expr_vec(span, coldefs);
 
-    (
-        item.ident,
-        cx.expr_str(span, token::intern_and_get_ident(query_fmt.as_slice()))
-    )
+    (item.ident, vec_expr)
 }
 
 fn expand_table(cx: &mut ExtCtxt,
@@ -62,15 +70,25 @@ fn expand_table(cx: &mut ExtCtxt,
                 _mitem: @ast::MetaItem,
                 item: @ast::Item,
                 push: |@ast::Item|) {
-    let (table_name, query_fmt) = create_query_expr(cx, span, item);
+    let (table_name, schema) = create_query_expr(cx, span, item);
+    let table_name_str = cx.expr_str(span, token::intern_and_get_ident(table_name.to_source().as_slice()));
+
     let trait_item = quote_item!(cx,
         impl sql::Table for $table_name {
-            fn create_table_query() -> &str {
-                $query_fmt
+            fn table_name(_: Option<$table_name>) -> &str {
+                $table_name_str
+            }
+
+            fn create_table_query(_: Option<$table_name>) -> String {
+                let coldefs:Vec<String> = $schema.iter().map(|&(colname, typename)| {
+                    format!("{} {}", colname, typename)
+                }).collect();
+
+                let table_name = sql::table_name::<$table_name>();
+                format!("CREATE TABLE {} ({});", table_name, coldefs.connect(", "))
             }
         }
     );
 
-    //push(item);
     push(trait_item.unwrap());
 }

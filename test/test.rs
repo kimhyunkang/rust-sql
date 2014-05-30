@@ -9,3 +9,8 @@ pub struct TestTable {
     pub a: int,
     pub b: String
 }
+
+#[test]
+fn create_table_query_test() {
+    assert_eq!(sql::create_table_query::<TestTable>(), "CREATE TABLE TestTable (a int, b text);".to_strbuf())
+}
