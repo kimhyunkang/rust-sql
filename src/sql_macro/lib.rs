@@ -131,11 +131,11 @@ fn expand_table(cx: &mut ExtCtxt,
 
     let trait_item = quote_item!(cx,
         impl sql::Table for $table_name {
-            fn table_name(_: Option<$table_name>) -> &str {
+            fn table_name(_: Option<&$table_name>) -> &str {
                 $table_name_str
             }
 
-            fn create_table_query(_: Option<$table_name>) -> String {
+            fn create_table_query(_: Option<&$table_name>) -> String {
                 let coldefs:Vec<String> = $schema.iter().map(|&(colname, ref typename)| {
                     format!("{} {}", colname, typename.as_slice())
                 }).collect();
@@ -144,11 +144,11 @@ fn expand_table(cx: &mut ExtCtxt,
                 format!("CREATE TABLE IF NOT EXISTS {} ({});", table_name, coldefs.connect(", "))
             }
 
-            fn insert_query(_: Option<$table_name>) -> &str {
+            fn insert_query(_: Option<&$table_name>) -> &str {
                 $insert_query
             }
 
-            fn select_query(_: Option<$table_name>) -> &str {
+            fn select_query(_: Option<&$table_name>) -> &str {
                 $select_query
             }
 

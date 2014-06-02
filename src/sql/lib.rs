@@ -12,42 +12,42 @@ extern crate sqlite3;
 pub mod adapter;
 
 pub trait Table {
-    fn table_name(_: Option<Self>) -> &str;
-    fn create_table_query(_: Option<Self>) -> String;
-    fn insert_query(_: Option<Self>) -> &str;
-    fn select_query(_: Option<Self>) -> &str;
+    fn table_name(_: Option<&Self>) -> &str;
+    fn create_table_query(_: Option<&Self>) -> String;
+    fn insert_query(_: Option<&Self>) -> &str;
+    fn select_query(_: Option<&Self>) -> &str;
     fn bind(&self, cursor: &adapter::SqlAdapterCursor);
     fn get_row(cursor: &adapter::SqlAdapterCursor) -> Self;
 }
 
 pub fn table_name<T: Table>() -> &str {
-    Table::table_name(None::<T>)
+    Table::table_name(None::<&T>)
 }
 
 pub fn create_table_query<T: Table>() -> String {
-    Table::create_table_query(None::<T>)
+    Table::create_table_query(None::<&T>)
 }
 
 pub fn insert_query<T: Table>() -> &str {
-    Table::insert_query(None::<T>)
+    Table::insert_query(None::<&T>)
 }
 
 pub fn select_query<T: Table>() -> &str {
-    Table::select_query(None::<T>)
+    Table::select_query(None::<&T>)
 }
 
 pub trait SqlPrimitive {
-    fn prim_typename(_: Option<Self>) -> &str;
+    fn prim_typename(_: Option<&Self>) -> &str;
     fn prim_bind(&self, cursor: &adapter::SqlAdapterCursor, idx: int);
     fn prim_get(cursor: &adapter::SqlAdapterCursor, idx: int) -> Self;
 }
 
 pub fn prim_typename<T: SqlPrimitive>() -> &str {
-    SqlPrimitive::prim_typename(None::<T>)
+    SqlPrimitive::prim_typename(None::<&T>)
 }
 
 impl SqlPrimitive for int {
-    fn prim_typename(_: Option<int>) -> &str {
+    fn prim_typename(_: Option<&int>) -> &str {
         "int"
     }
 
@@ -61,7 +61,7 @@ impl SqlPrimitive for int {
 }
 
 impl SqlPrimitive for String {
-    fn prim_typename(_: Option<String>) -> &str {
+    fn prim_typename(_: Option<&String>) -> &str {
         "text"
     }
 
@@ -75,7 +75,7 @@ impl SqlPrimitive for String {
 }
 
 impl SqlPrimitive for f64 {
-    fn prim_typename(_: Option<f64>) -> &str {
+    fn prim_typename(_: Option<&f64>) -> &str {
         "real"
     }
 
@@ -89,17 +89,17 @@ impl SqlPrimitive for f64 {
 }
 
 pub trait SqlType {
-    fn typename(_: Option<Self>) -> String;
+    fn typename(_: Option<&Self>) -> String;
     fn bind(&self, cursor: &adapter::SqlAdapterCursor, idx: int);
     fn get_col(cursor: &adapter::SqlAdapterCursor, idx: int) -> Self;
 }
 
 pub fn sql_typename<T: SqlType>() -> String {
-    SqlType::typename(None::<T>)
+    SqlType::typename(None::<&T>)
 }
 
 impl<T:SqlPrimitive> SqlType for Option<T> {
-    fn typename(_: Option<Option<T>>) -> String {
+    fn typename(_: Option<&Option<T>>) -> String {
         prim_typename::<T>().to_str()
     }
 
@@ -126,7 +126,7 @@ pub fn bind_sqltype<T: SqlType>(value: &T, cursor: &adapter::SqlAdapterCursor, i
 macro_rules! impl_sqltype(
     ($prim_ty:ty) => (
         impl SqlType for $prim_ty {
-            fn typename(_: Option<$prim_ty>) -> String {
+            fn typename(_: Option<&$prim_ty>) -> String {
                 format!("{} not null", prim_typename::<$prim_ty>())
             }
 
