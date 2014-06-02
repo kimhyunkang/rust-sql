@@ -23,8 +23,7 @@ pub trait SqlAdapterCursor {
 
 pub struct SqlSelectIter<'r, T> {
     db: &'r SqlAdapter,
-    cursor: Box<SqlAdapterCursor>,
-    dummy: Option<&'r T>
+    cursor: Box<SqlAdapterCursor>
 }
 
 impl<'r, T:Table> Iterator<T> for SqlSelectIter<'r, T> {
@@ -131,8 +130,7 @@ impl SqlAdapter for sqlite3::Database {
             Err(_) => fail!("{}", self.get_errmsg()),
             Ok(cursor) => SqlSelectIter {
                 db: self,
-                cursor: box cursor,
-                dummy: None::<&T>
+                cursor: box cursor
             }
         }
     }
