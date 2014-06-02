@@ -22,47 +22,14 @@ pub fn macro_registrar(register: |ast::Name, SyntaxExtension|) {
     register(token::intern("sql_table"), ItemDecorator(expand_table))
 }
 
-fn coldef_typename(cx: &mut ExtCtxt, ty: ast::P<ast::Ty>) -> @ast::Expr {
-    quote_expr!(cx, sql::sql_typename::<$ty>())
+struct TableExprs {
+    schema_expr: @ast::Expr,
+    insert_query_expr: @ast::Expr,
+    bind_struct_block: @ast::Block
 }
 
-fn create_query_expr(cx: &mut ExtCtxt,
-                    span: codemap::Span,
-                    item: @ast::Item) -> (ast::Ident, @ast::Expr) {
-    let structdef = match item.node {
-        ast::ItemStruct(ref structdef, ref generics) => {
-            if generics.lifetimes.len() != 0 {
-                cx.span_bug(span, "#[sql_table] decorator only supports POD struct")
-            } else if generics.ty_params.len() != 0 {
-                cx.span_bug(span, "#[sql_table] decorator does not support type params")
-            } else {
-                structdef
-            }
-        },
-        _ => cx.span_bug(span, "#[sql_table] decorator only supports struct types")
-    };
-
-    let mut coldefs = Vec::new();
-
-    for field in structdef.fields.iter() {
-        match field.node.kind {
-            ast::UnnamedField(_) =>
-                cx.span_bug(field.span, "#[sql_table] does not support unnamed struct"),
-            ast::NamedField(ref ident, _) => {
-                let ty = field.node.ty;
-                let tuple = ast::ExprTup(vec![
-                    cx.expr_str(span, token::intern_and_get_ident(ident.to_source().as_slice())),
-                    coldef_typename(cx, ty) 
-                ]);
-
-                coldefs.push(cx.expr(span, tuple))
-            }
-        }
-    }
-
-    let vec_expr = cx.expr_vec(span, coldefs);
-
-    (item.ident, vec_expr)
+fn coldef_typename(cx: &mut ExtCtxt, ty: ast::P<ast::Ty>) -> @ast::Expr {
+    quote_expr!(cx, sql::sql_typename::<$ty>())
 }
 
 fn bind_field_stmt(cx: &mut ExtCtxt,
@@ -73,9 +40,9 @@ fn bind_field_stmt(cx: &mut ExtCtxt,
     quote_stmt!(cx, sql::bind_sqltype(&self.$ident, cursor, $idx_lit); )
 }
 
-fn insert_query_expr(cx: &mut ExtCtxt,
+fn build_exprs(cx: &mut ExtCtxt,
                     span: codemap::Span,
-                    item: @ast::Item) -> @ast::Expr {
+                    item: @ast::Item) -> TableExprs {
     let structdef = match item.node {
         ast::ItemStruct(ref structdef, ref generics) => {
             if generics.lifetimes.len() != 0 {
@@ -90,55 +57,42 @@ fn insert_query_expr(cx: &mut ExtCtxt,
     };
 
     let mut coldefs = Vec::new();
+    let mut colnames = Vec::new();
     let mut qmarks = Vec::new();
-
-    for field in structdef.fields.iter() {
-        match field.node.kind {
-            ast::UnnamedField(_) =>
-                cx.span_bug(field.span, "#[sql_table] does not support unnamed struct"),
-            ast::NamedField(ref ident, _) => {
-                coldefs.push(ident.to_source());
-                qmarks.push("?");
-            }
-        }
-    }
-
-    let query = format!("INSERT INTO {} ({}) VALUES ({});",
-                        item.ident.to_source(), 
-                        coldefs.connect(", "),
-                        qmarks.connect(", "));
-
-    cx.expr_str(span, token::intern_and_get_ident(query.as_slice()))
-}
-
-fn bind_struct_block(cx: &mut ExtCtxt,
-                    span: codemap::Span,
-                    item: @ast::Item) -> @ast::Block {
-    let structdef = match item.node {
-        ast::ItemStruct(ref structdef, ref generics) => {
-            if generics.lifetimes.len() != 0 {
-                cx.span_bug(span, "#[sql_table] decorator only supports POD struct")
-            } else if generics.ty_params.len() != 0 {
-                cx.span_bug(span, "#[sql_table] decorator does not support type params")
-            } else {
-                structdef
-            }
-        },
-        _ => cx.span_bug(span, "#[sql_table] decorator only supports struct types")
-    };
-
     let mut stmts = Vec::new();
 
     for (idx, field) in structdef.fields.iter().enumerate() {
         match field.node.kind {
             ast::UnnamedField(_) =>
                 cx.span_bug(field.span, "#[sql_table] does not support unnamed struct"),
-            ast::NamedField(ref ident, _) => 
+            ast::NamedField(ref ident, _) => {
+                let ty = field.node.ty;
+                let tuple = ast::ExprTup(vec![
+                    cx.expr_str(span, token::intern_and_get_ident(ident.to_source().as_slice())),
+                    coldef_typename(cx, ty) 
+                ]);
+
+                coldefs.push(cx.expr(span, tuple));
+                colnames.push(ident.to_source());
+                qmarks.push("?");
                 stmts.push(bind_field_stmt(cx, span, ident, (idx+1) as int))
+            }
         }
     }
 
-    cx.block(span, stmts, None)
+    let vec_expr = cx.expr_vec(span, coldefs);
+
+    let insert_query = format!("INSERT INTO {} ({}) VALUES ({});",
+                            item.ident.to_source(), 
+                            colnames.connect(", "),
+                            qmarks.connect(", "));
+
+
+    TableExprs {
+        schema_expr: vec_expr,
+        insert_query_expr: cx.expr_str(span, token::intern_and_get_ident(insert_query.as_slice())),
+        bind_struct_block: cx.block(span, stmts, None)
+    }
 }
 
 fn expand_table(cx: &mut ExtCtxt,
@@ -146,10 +100,14 @@ fn expand_table(cx: &mut ExtCtxt,
                 _mitem: @ast::MetaItem,
                 item: @ast::Item,
                 push: |@ast::Item|) {
-    let (table_name, schema) = create_query_expr(cx, span, item);
-    let insert_query = insert_query_expr(cx, span, item);
-    let bind_block = bind_struct_block(cx, span, item);
-    let table_name_str = cx.expr_str(span, token::intern_and_get_ident(table_name.to_source().as_slice()));
+    let table_exprs = build_exprs(cx, span, item);
+
+    let table_name = item.ident;
+    let tablename_tok = token::intern_and_get_ident(item.ident.to_source().as_slice());
+    let table_name_str = cx.expr_str(span, tablename_tok);
+    let schema = table_exprs.schema_expr;
+    let insert_query = table_exprs.insert_query_expr;
+    let bind_block = table_exprs.bind_struct_block;
 
     let trait_item = quote_item!(cx,
         impl sql::Table for $table_name {
