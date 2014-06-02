@@ -28,7 +28,7 @@ fn insert_query_test() {
 
 #[test]
 fn insert_test() {
-    let db = sqlite3::open("test.sqlite3").unwrap();
+    let db = sqlite3::open("insert_test.sqlite3").unwrap();
     let records = [
         TestTable { a: None, b: "Hello, world!".to_str() },
         TestTable { a: Some(1), b: "Goodbye, world!".to_str() }
@@ -39,14 +39,30 @@ fn insert_test() {
     match db.prepare("SELECT * from TestTable;", &None) {
         Err(_) => fail!("{}", db.get_errmsg()),
         Ok(cursor) => {
+            match cursor.step() {
+                sqlite3::SQLITE_ROW => (),
+                e => fail!("{:?}", e)
+            };
             match cursor.get_column_type(0) {
                 sqlite3::SQLITE_NULL => (),
                 ty => fail!("{:?}", ty)
             };
-            assert_eq!(cursor.get_text(1), "Hello, world!".to_str());
-            cursor.step();
-            assert_eq!(cursor.get_int(0), 1);
-            assert_eq!(cursor.get_text(1), "Goodbye, world!".to_str());
+            match cursor.get_column_type(1) {
+                sqlite3::SQLITE_TEXT => assert_eq!(cursor.get_text(1), "Hello, world!".to_str()),
+                ty => fail!("{:?}", ty)
+            };
+            match cursor.step() {
+                sqlite3::SQLITE_ROW => (),
+                e => fail!("{:?}", e)
+            };
+            match cursor.get_column_type(0) {
+                sqlite3::SQLITE_INTEGER => assert_eq!(cursor.get_int(0), 1),
+                ty => fail!("{:?}", ty)
+            };
+            match cursor.get_column_type(1) {
+                sqlite3::SQLITE_TEXT => assert_eq!(cursor.get_text(1), "Goodbye, world!".to_str()),
+                ty => fail!("{:?}", ty)
+            };
         }
     }
 }

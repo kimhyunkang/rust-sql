@@ -24,4 +24,4 @@ $(OUT)/test: test/test.rs $(OUT)/$(SQL_DYLIB) $(OUT)/$(SQL_MACRO_DYLIB) $(OUT)/$
 	rustc $(RUSTFLAGS) --test -L $(OUT) -o $@ $<
 
 check: $(OUT)/test
-	./$(OUT)/test
+	cd $(OUT) && rm -f *.sqlite3 && ./test
