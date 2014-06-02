@@ -25,6 +25,7 @@ pub fn macro_registrar(register: |ast::Name, SyntaxExtension|) {
 struct TableExprs {
     schema_expr: @ast::Expr,
     insert_query_expr: @ast::Expr,
+    select_query_expr: @ast::Expr,
     bind_struct_block: @ast::Block
 }
 
@@ -87,10 +88,12 @@ fn build_exprs(cx: &mut ExtCtxt,
                             colnames.connect(", "),
                             qmarks.connect(", "));
 
+    let select_query = format!("SELECT * FROM {};", item.ident.to_source());
 
     TableExprs {
         schema_expr: vec_expr,
         insert_query_expr: cx.expr_str(span, token::intern_and_get_ident(insert_query.as_slice())),
+        select_query_expr: cx.expr_str(span, token::intern_and_get_ident(select_query.as_slice())),
         bind_struct_block: cx.block(span, stmts, None)
     }
 }
@@ -107,6 +110,7 @@ fn expand_table(cx: &mut ExtCtxt,
     let table_name_str = cx.expr_str(span, tablename_tok);
     let schema = table_exprs.schema_expr;
     let insert_query = table_exprs.insert_query_expr;
+    let select_query = table_exprs.select_query_expr;
     let bind_block = table_exprs.bind_struct_block;
 
     let trait_item = quote_item!(cx,
@@ -126,6 +130,10 @@ fn expand_table(cx: &mut ExtCtxt,
 
             fn insert_query(_: Option<$table_name>) -> &str {
                 $insert_query
+            }
+
+            fn select_query(_: Option<$table_name>) -> &str {
+                $select_query
             }
 
             fn bind(&self, cursor: &sql::adapter::SqlAdapterCursor) {

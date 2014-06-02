@@ -14,6 +14,7 @@ pub trait Table {
     fn table_name(_: Option<Self>) -> &str;
     fn create_table_query(_: Option<Self>) -> String;
     fn insert_query(_: Option<Self>) -> &str;
+    fn select_query(_: Option<Self>) -> &str;
     fn bind(&self, cursor: &adapter::SqlAdapterCursor);
 }
 
@@ -27,6 +28,10 @@ pub fn create_table_query<T: Table>() -> String {
 
 pub fn insert_query<T: Table>() -> &str {
     Table::insert_query(None::<T>)
+}
+
+pub fn select_query<T: Table>() -> &str {
+    Table::select_query(None::<T>)
 }
 
 pub trait SqlPrimitive {

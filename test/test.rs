@@ -27,6 +27,11 @@ fn insert_query_test() {
 }
 
 #[test]
+fn select_query_test() {
+    assert_eq!(sql::select_query::<TestTable>(), "SELECT * FROM TestTable;")
+}
+
+#[test]
 fn insert_test() {
     let db = sqlite3::open("insert_test.sqlite3").unwrap();
     let records = [
