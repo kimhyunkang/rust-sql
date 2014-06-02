@@ -65,6 +65,14 @@ fn create_query_expr(cx: &mut ExtCtxt,
     (item.ident, vec_expr)
 }
 
+fn bind_field_stmt(cx: &mut ExtCtxt,
+                span: codemap::Span,
+                ident: &ast::Ident,
+                idx: int) -> @ast::Stmt {
+    let idx_lit = cx.expr_int(span, idx);
+    quote_stmt!(cx, sql::bind_sqltype(&self.$ident, cursor, $idx_lit); )
+}
+
 fn insert_query_expr(cx: &mut ExtCtxt,
                     span: codemap::Span,
                     item: @ast::Item) -> @ast::Expr {
@@ -103,6 +111,36 @@ fn insert_query_expr(cx: &mut ExtCtxt,
     cx.expr_str(span, token::intern_and_get_ident(query.as_slice()))
 }
 
+fn bind_struct_block(cx: &mut ExtCtxt,
+                    span: codemap::Span,
+                    item: @ast::Item) -> @ast::Block {
+    let structdef = match item.node {
+        ast::ItemStruct(ref structdef, ref generics) => {
+            if generics.lifetimes.len() != 0 {
+                cx.span_bug(span, "#[sql_table] decorator only supports POD struct")
+            } else if generics.ty_params.len() != 0 {
+                cx.span_bug(span, "#[sql_table] decorator does not support type params")
+            } else {
+                structdef
+            }
+        },
+        _ => cx.span_bug(span, "#[sql_table] decorator only supports struct types")
+    };
+
+    let mut stmts = Vec::new();
+
+    for (idx, field) in structdef.fields.iter().enumerate() {
+        match field.node.kind {
+            ast::UnnamedField(_) =>
+                cx.span_bug(field.span, "#[sql_table] does not support unnamed struct"),
+            ast::NamedField(ref ident, _) => 
+                stmts.push(bind_field_stmt(cx, span, ident, (idx+1) as int))
+        }
+    }
+
+    cx.block(span, stmts, None)
+}
+
 fn expand_table(cx: &mut ExtCtxt,
                 span: codemap::Span,
                 _mitem: @ast::MetaItem,
@@ -110,6 +148,7 @@ fn expand_table(cx: &mut ExtCtxt,
                 push: |@ast::Item|) {
     let (table_name, schema) = create_query_expr(cx, span, item);
     let insert_query = insert_query_expr(cx, span, item);
+    let bind_block = bind_struct_block(cx, span, item);
     let table_name_str = cx.expr_str(span, token::intern_and_get_ident(table_name.to_source().as_slice()));
 
     let trait_item = quote_item!(cx,
@@ -129,6 +168,10 @@ fn expand_table(cx: &mut ExtCtxt,
 
             fn insert_query(_: Option<$table_name>) -> &str {
                 $insert_query
+            }
+
+            fn bind(&self, cursor: &sql::adapter::SqlAdapterCursor) {
+                $bind_block
             }
         }
     );
