@@ -13,6 +13,7 @@ pub mod adapter;
 pub trait Table {
     fn table_name(_: Option<Self>) -> &str;
     fn create_table_query(_: Option<Self>) -> String;
+    fn insert_query(_: Option<Self>) -> &str;
 }
 
 pub fn table_name<T: Table>() -> &str {
@@ -21,6 +22,10 @@ pub fn table_name<T: Table>() -> &str {
 
 pub fn create_table_query<T: Table>() -> String {
     Table::create_table_query(None::<T>)
+}
+
+pub fn insert_query<T: Table>() -> &str {
+    Table::insert_query(None::<T>)
 }
 
 pub trait SqlPrimitive {

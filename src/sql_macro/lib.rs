@@ -65,12 +65,51 @@ fn create_query_expr(cx: &mut ExtCtxt,
     (item.ident, vec_expr)
 }
 
+fn insert_query_expr(cx: &mut ExtCtxt,
+                    span: codemap::Span,
+                    item: @ast::Item) -> @ast::Expr {
+    let structdef = match item.node {
+        ast::ItemStruct(ref structdef, ref generics) => {
+            if generics.lifetimes.len() != 0 {
+                cx.span_bug(span, "#[sql_table] decorator only supports POD struct")
+            } else if generics.ty_params.len() != 0 {
+                cx.span_bug(span, "#[sql_table] decorator does not support type params")
+            } else {
+                structdef
+            }
+        },
+        _ => cx.span_bug(span, "#[sql_table] decorator only supports struct types")
+    };
+
+    let mut coldefs = Vec::new();
+    let mut qmarks = Vec::new();
+
+    for field in structdef.fields.iter() {
+        match field.node.kind {
+            ast::UnnamedField(_) =>
+                cx.span_bug(field.span, "#[sql_table] does not support unnamed struct"),
+            ast::NamedField(ref ident, _) => {
+                coldefs.push(ident.to_source());
+                qmarks.push("?");
+            }
+        }
+    }
+
+    let query = format!("INSERT INTO {} ({}) VALUES ({});",
+                        item.ident.to_source(), 
+                        coldefs.connect(", "),
+                        qmarks.connect(", "));
+
+    cx.expr_str(span, token::intern_and_get_ident(query.as_slice()))
+}
+
 fn expand_table(cx: &mut ExtCtxt,
                 span: codemap::Span,
                 _mitem: @ast::MetaItem,
                 item: @ast::Item,
                 push: |@ast::Item|) {
     let (table_name, schema) = create_query_expr(cx, span, item);
+    let insert_query = insert_query_expr(cx, span, item);
     let table_name_str = cx.expr_str(span, token::intern_and_get_ident(table_name.to_source().as_slice()));
 
     let trait_item = quote_item!(cx,
@@ -86,6 +125,10 @@ fn expand_table(cx: &mut ExtCtxt,
 
                 let table_name = sql::table_name::<$table_name>();
                 format!("CREATE TABLE IF NOT EXISTS {} ({});", table_name, coldefs.connect(", "))
+            }
+
+            fn insert_query(_: Option<$table_name>) -> &str {
+                $insert_query
             }
         }
     );

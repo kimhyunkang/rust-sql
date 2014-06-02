@@ -20,6 +20,11 @@ fn create_table_query_test() {
 }
 
 #[test]
+fn insert_query_test() {
+    assert_eq!(sql::insert_query::<TestTable>(), "INSERT INTO TestTable (a, b) VALUES (?, ?);")
+}
+
+#[test]
 fn create_table() {
     let db = sqlite3::open("test.sqlite3").unwrap();
     db.create_table_if_not_exists::<TestTable>();
