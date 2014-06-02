@@ -11,6 +11,7 @@ extern crate sqlite3;
 use sql::adapter::SqlAdapter;
 
 #[sql_table]
+#[deriving(Eq, Show)]
 pub struct TestTable {
     pub a: Option<int>,
     pub b: String
@@ -29,6 +30,13 @@ fn insert_query_test() {
 #[test]
 fn select_query_test() {
     assert_eq!(sql::select_query::<TestTable>(), "SELECT * FROM TestTable;")
+}
+
+#[test]
+fn test_deriving_eq() {
+    let record0 = TestTable { a: Some(1), b: "Hello, world!".to_str() };
+    let record1 = TestTable { a: Some(1), b: "Hello, world!".to_str() };
+    assert_eq!(record0, record1)
 }
 
 #[test]
