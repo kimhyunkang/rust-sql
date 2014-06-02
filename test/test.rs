@@ -79,3 +79,57 @@ fn insert_test() {
         }
     }
 }
+
+#[test]
+fn select_test() {
+    let db = sqlite3::open("select_test.sqlite3").unwrap();
+    db.create_table_if_not_exists::<TestTable>();
+
+    match db.prepare("INSERT INTO TestTable VALUES (?, ?);", &None) {
+        Err(_) => fail!("{}", db.get_errmsg()),
+        Ok(cursor) => {
+            match cursor.bind_param(1, &sqlite3::Null) {
+                sqlite3::SQLITE_OK => (),
+                e => fail!("{:?}: {}", e, db.get_errmsg())
+            }
+
+            match cursor.bind_param(2, &sqlite3::Text("Hello, world!".to_str())) {
+                sqlite3::SQLITE_OK => (),
+                e => fail!("{:?}: {}", e, db.get_errmsg())
+            }
+
+            match cursor.step() {
+                sqlite3::SQLITE_DONE => (),
+                e => fail!("{:?}: {}", e, db.get_errmsg())
+            }
+
+            match cursor.reset() {
+                sqlite3::SQLITE_OK => (),
+                e => fail!("{:?}: {}", e, db.get_errmsg())
+            }
+
+            match cursor.bind_param(1, &sqlite3::Integer(1)) {
+                sqlite3::SQLITE_OK => (),
+                e => fail!("{:?}: {}", e, db.get_errmsg())
+            }
+
+            match cursor.bind_param(2, &sqlite3::Text("Goodbye, world!".to_str())) {
+                sqlite3::SQLITE_OK => (),
+                e => fail!("{:?}: {}", e, db.get_errmsg())
+            }
+
+            match cursor.step() {
+                sqlite3::SQLITE_DONE => (),
+                e => fail!("{:?}: {}", e, db.get_errmsg())
+            }
+        }
+    }
+
+    let expected = vec![
+        TestTable { a: None, b: "Hello, world!".to_str() },
+        TestTable { a: Some(1), b: "Goodbye, world!".to_str() }
+    ];
+
+    let records: Vec<TestTable> = db.select_all().collect();
+    assert_eq!(records, expected)
+}

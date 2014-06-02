@@ -4,6 +4,7 @@ use sqlite3;
 pub trait SqlAdapter {
     fn create_table_if_not_exists<T:Table>(&self);
     fn insert_many<'r, T:Table, Iter: Iterator<&'r T>>(&self, records: Iter);
+    fn select_all<'r, T:Table>(&'r self) -> SqlSelectIter<'r, T>;
 }
 
 pub trait SqlAdapterCursor {
@@ -11,6 +12,29 @@ pub trait SqlAdapterCursor {
     fn bind_int(&self, idx: int, value: int);
     fn bind_str(&self, idx: int, value: &str);
     fn bind_f64(&self, idx: int, value: f64);
+
+    fn is_null(&self, idx: int) -> bool;
+    fn get_prim_int(&self, idx: int) -> int;
+    fn get_prim_str(&self, idx: int) -> String;
+    fn get_prim_f64(&self, idx: int) -> f64;
+
+    fn fetch_row(&self) -> bool;
+}
+
+pub struct SqlSelectIter<'r, T> {
+    db: &'r SqlAdapter,
+    cursor: Box<SqlAdapterCursor>,
+    dummy: Option<&'r T>
+}
+
+impl<'r, T:Table> Iterator<T> for SqlSelectIter<'r, T> {
+    fn next(&mut self) -> Option<T> {
+        if self.cursor.fetch_row() {
+            Some(Table::get_row(self.cursor))
+        } else {
+            None
+        }
+    }
 }
 
 impl<'db> SqlAdapterCursor for sqlite3::Cursor<'db> {
@@ -41,6 +65,42 @@ impl<'db> SqlAdapterCursor for sqlite3::Cursor<'db> {
             errorcode => fail!("{}", errorcode)
         }
     }
+
+    fn is_null(&self, idx: int) -> bool {
+        match self.get_column_type(idx) {
+            sqlite3::SQLITE_NULL => true,
+            _ => false
+        }
+    }
+
+    fn get_prim_int(&self, idx: int) -> int {
+        match self.get_column_type(idx) {
+            sqlite3::SQLITE_INTEGER => self.get_int(idx),
+            ty => fail!("unexpected column type {:?} at column {}", ty, idx)
+        }
+    }
+
+    fn get_prim_str(&self, idx: int) -> String {
+        match self.get_column_type(idx) {
+            sqlite3::SQLITE_TEXT => self.get_text(idx),
+            ty => fail!("unexpected column type {:?} at column {}", ty, idx)
+        }
+    }
+
+    fn get_prim_f64(&self, idx: int) -> f64 {
+        match self.get_column_type(idx) {
+            sqlite3::SQLITE_FLOAT => self.get_f64(idx),
+            ty => fail!("unexpected column type {:?} at column {}", ty, idx)
+        }
+    }
+
+    fn fetch_row(&self) -> bool {
+        match self.step() {
+            sqlite3::SQLITE_ROW => true,
+            sqlite3::SQLITE_DONE => false,
+            e => fail!("unexpected return value from cursor: {:?}", e)
+        }
+    }
 }
 
 impl SqlAdapter for sqlite3::Database {
@@ -62,6 +122,17 @@ impl SqlAdapter for sqlite3::Database {
                     cursor.step();
                     cursor.reset();
                 }
+            }
+        }
+    }
+
+    fn select_all<'r, T:Table>(&'r self) -> SqlSelectIter<'r, T> {
+        match self.prepare(super::select_query::<T>(), &None) {
+            Err(_) => fail!("{}", self.get_errmsg()),
+            Ok(cursor) => SqlSelectIter {
+                db: self,
+                cursor: box cursor,
+                dummy: None::<&T>
             }
         }
     }

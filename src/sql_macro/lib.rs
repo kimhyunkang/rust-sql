@@ -26,7 +26,8 @@ struct TableExprs {
     schema_expr: @ast::Expr,
     insert_query_expr: @ast::Expr,
     select_query_expr: @ast::Expr,
-    bind_struct_block: @ast::Block
+    bind_struct_block: @ast::Block,
+    get_row_expr: @ast::Expr
 }
 
 fn coldef_typename(cx: &mut ExtCtxt, ty: ast::P<ast::Ty>) -> @ast::Expr {
@@ -39,6 +40,13 @@ fn bind_field_stmt(cx: &mut ExtCtxt,
                 idx: int) -> @ast::Stmt {
     let idx_lit = cx.expr_int(span, idx);
     quote_stmt!(cx, sql::bind_sqltype(&self.$ident, cursor, $idx_lit); )
+}
+
+fn get_field_expr(cx: &mut ExtCtxt,
+                span: codemap::Span,
+                idx: int) -> @ast::Expr {
+    let idx_lit = cx.expr_int(span, idx);
+    quote_expr!(cx, sql::SqlType::get_col(cursor, $idx_lit) )
 }
 
 fn build_exprs(cx: &mut ExtCtxt,
@@ -61,6 +69,7 @@ fn build_exprs(cx: &mut ExtCtxt,
     let mut colnames = Vec::new();
     let mut qmarks = Vec::new();
     let mut stmts = Vec::new();
+    let mut fields = Vec::new();
 
     for (idx, field) in structdef.fields.iter().enumerate() {
         match field.node.kind {
@@ -76,7 +85,12 @@ fn build_exprs(cx: &mut ExtCtxt,
                 coldefs.push(cx.expr(span, tuple));
                 colnames.push(ident.to_source());
                 qmarks.push("?");
-                stmts.push(bind_field_stmt(cx, span, ident, (idx+1) as int))
+                stmts.push(bind_field_stmt(cx, span, ident, (idx+1) as int));
+                fields.push(ast::Field {
+                    ident: codemap::Spanned { node: ident.clone(), span: span },
+                    expr: get_field_expr(cx, span, idx as int),
+                    span: span
+                });
             }
         }
     }
@@ -94,7 +108,8 @@ fn build_exprs(cx: &mut ExtCtxt,
         schema_expr: vec_expr,
         insert_query_expr: cx.expr_str(span, token::intern_and_get_ident(insert_query.as_slice())),
         select_query_expr: cx.expr_str(span, token::intern_and_get_ident(select_query.as_slice())),
-        bind_struct_block: cx.block(span, stmts, None)
+        bind_struct_block: cx.block(span, stmts, None),
+        get_row_expr: cx.expr_struct_ident(span, item.ident, fields)
     }
 }
 
@@ -112,6 +127,7 @@ fn expand_table(cx: &mut ExtCtxt,
     let insert_query = table_exprs.insert_query_expr;
     let select_query = table_exprs.select_query_expr;
     let bind_block = table_exprs.bind_struct_block;
+    let get_row = table_exprs.get_row_expr;
 
     let trait_item = quote_item!(cx,
         impl sql::Table for $table_name {
@@ -138,6 +154,10 @@ fn expand_table(cx: &mut ExtCtxt,
 
             fn bind(&self, cursor: &sql::adapter::SqlAdapterCursor) {
                 $bind_block
+            }
+
+            fn get_row(cursor: &sql::adapter::SqlAdapterCursor) -> $table_name {
+                $get_row
             }
         }
     );

@@ -6,6 +6,7 @@
 
 #![feature(macro_rules)]
 
+extern crate debug;
 extern crate sqlite3;
 
 pub mod adapter;
@@ -16,6 +17,7 @@ pub trait Table {
     fn insert_query(_: Option<Self>) -> &str;
     fn select_query(_: Option<Self>) -> &str;
     fn bind(&self, cursor: &adapter::SqlAdapterCursor);
+    fn get_row(cursor: &adapter::SqlAdapterCursor) -> Self;
 }
 
 pub fn table_name<T: Table>() -> &str {
@@ -37,6 +39,7 @@ pub fn select_query<T: Table>() -> &str {
 pub trait SqlPrimitive {
     fn prim_typename(_: Option<Self>) -> &str;
     fn prim_bind(&self, cursor: &adapter::SqlAdapterCursor, idx: int);
+    fn prim_get(cursor: &adapter::SqlAdapterCursor, idx: int) -> Self;
 }
 
 pub fn prim_typename<T: SqlPrimitive>() -> &str {
@@ -51,6 +54,10 @@ impl SqlPrimitive for int {
     fn prim_bind(&self, cursor: &adapter::SqlAdapterCursor, idx: int) {
         cursor.bind_int(idx, *self)
     }
+
+    fn prim_get(cursor: &adapter::SqlAdapterCursor, idx: int) -> int {
+        cursor.get_prim_int(idx)
+    }
 }
 
 impl SqlPrimitive for String {
@@ -60,6 +67,10 @@ impl SqlPrimitive for String {
 
     fn prim_bind(&self, cursor: &adapter::SqlAdapterCursor, idx: int) {
         cursor.bind_str(idx, self.as_slice())
+    }
+
+    fn prim_get(cursor: &adapter::SqlAdapterCursor, idx: int) -> String {
+        cursor.get_prim_str(idx)
     }
 }
 
@@ -71,11 +82,16 @@ impl SqlPrimitive for f64 {
     fn prim_bind(&self, cursor: &adapter::SqlAdapterCursor, idx: int) {
         cursor.bind_f64(idx, *self)
     }
+
+    fn prim_get(cursor: &adapter::SqlAdapterCursor, idx: int) -> f64 {
+        cursor.get_prim_f64(idx)
+    }
 }
 
 pub trait SqlType {
     fn typename(_: Option<Self>) -> String;
     fn bind(&self, cursor: &adapter::SqlAdapterCursor, idx: int);
+    fn get_col(cursor: &adapter::SqlAdapterCursor, idx: int) -> Self;
 }
 
 pub fn sql_typename<T: SqlType>() -> String {
@@ -93,6 +109,14 @@ impl<T:SqlPrimitive> SqlType for Option<T> {
             &Some(ref prim) => prim.prim_bind(cursor, idx)
         }
     }
+
+    fn get_col(cursor: &adapter::SqlAdapterCursor, idx: int) -> Option<T> {
+        if cursor.is_null(idx) {
+            None
+        } else {
+            Some(SqlPrimitive::prim_get(cursor, idx))
+        }
+    }
 }
 
 pub fn bind_sqltype<T: SqlType>(value: &T, cursor: &adapter::SqlAdapterCursor, idx: int) {
@@ -108,6 +132,10 @@ macro_rules! impl_sqltype(
 
             fn bind(&self, cursor: &adapter::SqlAdapterCursor, idx: int) {
                 self.prim_bind(cursor, idx)
+            }
+
+            fn get_col(cursor: &adapter::SqlAdapterCursor, idx: int) -> $prim_ty {
+                SqlPrimitive::prim_get(cursor, idx)
             }
         }
     )
