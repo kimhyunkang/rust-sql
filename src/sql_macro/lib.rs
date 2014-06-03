@@ -4,7 +4,7 @@
 #![license = "MIT"]
 #![crate_type = "dylib"]
 
-#![feature(macro_registrar, managed_boxes, quote)]
+#![feature(macro_registrar, managed_boxes, quote, struct_variant)]
 
 extern crate syntax;
 
@@ -12,14 +12,18 @@ use syntax::ast;
 use syntax::codemap;
 use syntax::ext::build::AstBuilder;
 use syntax::ext::base::{
-    SyntaxExtension, ItemDecorator, ExtCtxt
+    SyntaxExtension, ItemDecorator, ExtCtxt, BasicMacroExpander, NormalTT, MacResult, MacExpr
 };
 use syntax::ext::quote::rt::ToSource;
+use syntax::parse;
 use syntax::parse::token;
+use syntax::parse::parser::Parser;
 
 #[macro_registrar]
 pub fn macro_registrar(register: |ast::Name, SyntaxExtension|) {
-    register(token::intern("sql_table"), ItemDecorator(expand_table))
+    register(token::intern("sql_table"), ItemDecorator(expand_table));
+    let expand_sql = box BasicMacroExpander { expander: expand_sql_ext, span: None };
+    register(token::intern("sql"), NormalTT(expand_sql, None));
 }
 
 struct TableExprs {
@@ -163,4 +167,59 @@ fn expand_table(cx: &mut ExtCtxt,
     );
 
     push(trait_item.unwrap());
+}
+
+fn expand_sql_ext(cx: &mut ExtCtxt, sp: codemap::Span, tts: &[ast::TokenTree])
+                -> Box<MacResult> {
+    match parse_sql(cx, tts) {
+        None => MacExpr::new(cx.expr_str(sp, token::intern_and_get_ident(""))),
+        Some(SelectQuery { selector: _, tablename: table }) => {
+            let query = format!("SELECT * FROM {};", table.to_source());
+            let query_str = cx.expr_str(sp, token::intern_and_get_ident(query.as_slice()));
+            let selector = quote_expr!(cx, sql::selector::table_selector::<$table>($query_str));
+            MacExpr::new(selector)
+        }
+    }
+}
+
+enum SqlAst {
+    SelectQuery { selector: SelectColumns, tablename: ast::Ident }
+}
+
+enum SelectColumns {
+    AllColumns
+}
+
+fn parse_sql(cx: &ExtCtxt, tts: &[ast::TokenTree]) -> Option<SqlAst> {
+    let p = &mut parse::new_parser_from_tts(cx.parse_sess(), cx.cfg(), Vec::from_slice(tts));
+    match p.parse_ident().to_source().as_slice() {
+        "select" =>
+            parse_select(cx, p).map(|(cols, tablename)| {
+                SelectQuery { selector: cols, tablename: tablename }
+            }),
+        o => {
+            cx.span_err(p.last_span, format!("unknown SQL directive {}", o).as_slice());
+            None
+        }
+    }
+}
+
+fn parse_select<'r>(cx: &ExtCtxt, p: &mut Parser<'r>) -> Option<(SelectColumns, ast::Ident)> {
+    if p.eat(&token::BINOP(token::STAR)) {
+        match p.parse_ident().to_source().as_slice() {
+            "from" => {
+                let tablename = p.parse_ident();
+                p.expect(&token::EOF);
+                Some((AllColumns, tablename))
+            },
+            other => {
+                cx.span_err(p.last_span, format!("expected `from`, but found `{}`", other).as_slice());
+                None
+            }
+        }
+    } else {
+        let this_token_str = p.this_token_to_str();
+        cx.span_err(p.last_span, format!("unexpected token `{}`", this_token_str).as_slice());
+        None
+    }
 }

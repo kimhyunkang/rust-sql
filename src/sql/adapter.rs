@@ -4,7 +4,11 @@ use sqlite3;
 pub trait SqlAdapter {
     fn create_table_if_not_exists<T:Table>(&self);
     fn insert_many<'r, T:Table, Iter: Iterator<&'r T>>(&self, records: Iter);
-    fn select_all<'r, T:Table>(&'r self) -> SqlSelectIter<'r, T>;
+    unsafe fn select_table<'r, T:Table>(&'r self, query: &str) -> SqlSelectIter<'r, T>;
+
+    fn select_all<'r, T:Table>(&'r self) -> SqlSelectIter<'r, T> {
+        unsafe { self.select_table(super::select_query::<T>()) }
+    }
 }
 
 pub trait SqlAdapterCursor {
@@ -125,8 +129,8 @@ impl SqlAdapter for sqlite3::Database {
         }
     }
 
-    fn select_all<'r, T:Table>(&'r self) -> SqlSelectIter<'r, T> {
-        match self.prepare(super::select_query::<T>(), &None) {
+    unsafe fn select_table<'r, T:Table>(&'r self, query: &str) -> SqlSelectIter<'r, T> {
+        match self.prepare(query, &None) {
             Err(_) => fail!("{}", self.get_errmsg()),
             Ok(cursor) => SqlSelectIter {
                 db: self,

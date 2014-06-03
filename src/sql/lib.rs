@@ -10,6 +10,7 @@ extern crate debug;
 extern crate sqlite3;
 
 pub mod adapter;
+pub mod selector;
 
 pub trait Table {
     fn table_name(_: Option<&Self>) -> &str;
