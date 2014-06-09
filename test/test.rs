@@ -11,7 +11,7 @@ extern crate sqlite3;
 use sql::adapter::SqlAdapter;
 
 #[sql_table]
-#[deriving(Eq, Show)]
+#[deriving(PartialEq, Show)]
 pub struct TestTable {
     pub a: Option<int>,
     pub b: String
