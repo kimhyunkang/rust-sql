@@ -57,6 +57,24 @@ fn sql_macro_test() {
 }
 
 #[test]
+fn select_columns_macro_test() {
+    let db = sqlite3::open("select_columns_macro_test.sqlite3").unwrap();
+    db.create_table_if_not_exists::<TestTable>();
+
+    let records = vec![
+        TestTable { a: None, b: "Hello, world!".to_str() },
+        TestTable { a: Some(1), b: "Goodbye, world!".to_str() }
+    ];
+
+    db.insert_many(records.iter());
+
+    let selector = sql!(select a, b from TestTable);
+    let result:Vec<(Option<int>, String)> = selector.fetch(&db).collect();
+    let expected = vec![(None, "Hello, world!".to_str()), (Some(1), "Goodbye, world!".to_str())];
+    assert_eq!(result, expected)
+}
+
+#[test]
 fn insert_test() {
     let db = sqlite3::open("insert_test.sqlite3").unwrap();
     let records = [

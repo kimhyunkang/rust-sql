@@ -173,13 +173,34 @@ fn expand_sql_ext(cx: &mut ExtCtxt, sp: codemap::Span, tts: &[ast::TokenTree])
                 -> Box<MacResult> {
     match parse_sql(cx, tts) {
         None => MacExpr::new(cx.expr_str(sp, token::intern_and_get_ident(""))),
-        Some(SelectQuery { selector: _, tablename: table }) => {
+        Some(SelectQuery { selector: AllColumns, tablename: table }) => {
             let query = format!("SELECT * FROM {};", table.to_source());
             let query_str = cx.expr_str(sp, token::intern_and_get_ident(query.as_slice()));
             let selector = quote_expr!(cx, sql::selector::table_selector::<$table>($query_str));
             MacExpr::new(selector)
-        }
+        },
+        Some(SelectQuery { selector: Columns(cols), tablename: table }) => {
+            let col_list:Vec<String> = cols.iter().map(|id| id.to_source()).collect();
+            let query = format!("SELECT {} FROM {};", col_list.connect(", "), table.to_source());
+            let query_str = cx.expr_str(sp, token::intern_and_get_ident(query.as_slice()));
+            let tuple_expr = column_tuple(cx, sp, cols);
+            let selector = quote_expr!(cx, {
+                let dummy_tab = None::<$table>;
+                let dummy_cols = dummy_tab.map(|tab| $tuple_expr);
+                sql::selector::column_selector($query_str, dummy_cols)
+            });
+            MacExpr::new(selector)
+        },
     }
+}
+
+fn column_tuple(cx: &mut ExtCtxt, sp: codemap::Span, cols: Vec<ast::Ident>) -> @ast::Expr {
+    let tab = cx.expr_ident(sp, token::str_to_ident("tab"));
+    let exprs = cols.move_iter().map(|colname|
+        cx.expr_field_access(sp, tab, colname)
+    ).collect();
+
+    cx.expr(sp, ast::ExprTup(exprs))
 }
 
 enum SqlAst {
@@ -187,7 +208,8 @@ enum SqlAst {
 }
 
 enum SelectColumns {
-    AllColumns
+    AllColumns,
+    Columns(Vec<ast::Ident>)
 }
 
 fn parse_sql(cx: &ExtCtxt, tts: &[ast::TokenTree]) -> Option<SqlAst> {
@@ -205,21 +227,36 @@ fn parse_sql(cx: &ExtCtxt, tts: &[ast::TokenTree]) -> Option<SqlAst> {
 }
 
 fn parse_select<'r>(cx: &ExtCtxt, p: &mut Parser<'r>) -> Option<(SelectColumns, ast::Ident)> {
-    if p.eat(&token::BINOP(token::STAR)) {
+    parse_columns(cx, p).and_then(|cols| {
         match p.parse_ident().to_source().as_slice() {
             "from" => {
                 let tablename = p.parse_ident();
                 p.expect(&token::EOF);
-                Some((AllColumns, tablename))
+                Some((cols, tablename))
             },
             other => {
                 cx.span_err(p.last_span, format!("expected `from`, but found `{}`", other).as_slice());
                 None
             }
         }
+    })
+}
+
+fn parse_columns<'r>(cx: &ExtCtxt, p: &mut Parser<'r>) -> Option<SelectColumns> {
+    if p.eat(&token::BINOP(token::STAR)) {
+        Some(AllColumns)
     } else {
-        let this_token_str = p.this_token_to_str();
-        cx.span_err(p.last_span, format!("unexpected token `{}`", this_token_str).as_slice());
-        None
+        let mut cols = Vec::new();
+        loop {
+            let colname = p.parse_ident();
+            if colname.to_source().as_slice() == "from" {
+                cx.span_err(p.last_span, "expected `*` or column, but found `from`");
+                return None
+            }
+            cols.push(colname);
+            if !p.eat(&token::COMMA) {
+                return Some(Columns(cols))
+            }
+        }
     }
 }

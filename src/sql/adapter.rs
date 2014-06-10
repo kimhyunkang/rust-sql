@@ -1,12 +1,14 @@
 use super::Table;
+use selector::ColumnFacade;
 use sqlite3;
 
 pub trait SqlAdapter {
     fn create_table_if_not_exists<T:Table>(&self);
     fn insert_many<'r, T:Table, Iter: Iterator<&'r T>>(&self, records: Iter);
-    unsafe fn select_table<'r, T:Table>(&'r self, query: &str) -> SqlSelectIter<'r, T>;
+    unsafe fn select_table<'r, T>(&'r self, query: &str) -> SqlTableIter<'r, T>;
+    unsafe fn select_columns<'r, T>(&'r self, query: &str) -> SqlSelectIter<'r, T>;
 
-    fn select_all<'r, T:Table>(&'r self) -> SqlSelectIter<'r, T> {
+    fn select_all<'r, T:Table>(&'r self) -> SqlTableIter<'r, T> {
         unsafe { self.select_table(super::select_query::<T>()) }
     }
 }
@@ -25,15 +27,30 @@ pub trait SqlAdapterCursor {
     fn fetch_row(&self) -> bool;
 }
 
+pub struct SqlTableIter<'r, T> {
+    db: &'r SqlAdapter,
+    cursor: Box<SqlAdapterCursor>
+}
+
+impl<'r, T:Table> Iterator<T> for SqlTableIter<'r, T> {
+    fn next(&mut self) -> Option<T> {
+        if self.cursor.fetch_row() {
+            Some(Table::get_row(self.cursor))
+        } else {
+            None
+        }
+    }
+}
+
 pub struct SqlSelectIter<'r, T> {
     db: &'r SqlAdapter,
     cursor: Box<SqlAdapterCursor>
 }
 
-impl<'r, T:Table> Iterator<T> for SqlSelectIter<'r, T> {
+impl<'r, T:ColumnFacade> Iterator<T> for SqlSelectIter<'r, T> {
     fn next(&mut self) -> Option<T> {
         if self.cursor.fetch_row() {
-            Some(Table::get_row(self.cursor))
+            Some(ColumnFacade::get(self.cursor))
         } else {
             None
         }
@@ -129,7 +146,17 @@ impl SqlAdapter for sqlite3::Database {
         }
     }
 
-    unsafe fn select_table<'r, T:Table>(&'r self, query: &str) -> SqlSelectIter<'r, T> {
+    unsafe fn select_table<'r, T>(&'r self, query: &str) -> SqlTableIter<'r, T> {
+        match self.prepare(query, &None) {
+            Err(_) => fail!("{}", self.get_errmsg()),
+            Ok(cursor) => SqlTableIter {
+                db: self,
+                cursor: box cursor
+            }
+        }
+    }
+
+    unsafe fn select_columns<'r, T>(&'r self, query: &str) -> SqlSelectIter<'r, T> {
         match self.prepare(query, &None) {
             Err(_) => fail!("{}", self.get_errmsg()),
             Ok(cursor) => SqlSelectIter {
